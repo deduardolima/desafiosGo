@@ -1,0 +1,9 @@
+version: '3.9'
+
+services:
+  sqlite:
+    image: nouchka/sqlite3
+    volumes:
+      - ./db:/db
+    working_dir: /db
+    tty: true
