@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"io"
 	"log"
 	"net/http"
 	"strconv"
@@ -39,65 +38,65 @@ func main() {
 
 func getQuote(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 	start := time.Now()
-	defer r.Body.Close()
 
-	apiCtx, apiCancel := context.WithTimeout(r.Context(), 200*time.Millisecond)
-	defer apiCancel()
 
-	req, err := http.NewRequestWithContext(apiCtx, "GET", "https://economia.awesomeapi.com.br/json/last/USD-BRL", nil)
+	quote, err := fetchQuote(r.Context())
 	if err != nil {
+		log.Println("Erro ao obter a cotação:", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	client := &http.Client{}
-	res, err := client.Do(req)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusServiceUnavailable)
-		return
-	}
-	defer res.Body.Close()
-
-	responseData, err := getPrice(res.Body)
-	if err != nil {
+	if err := saveQuote(db, quote.Bid); err != nil {
+		log.Println("Erro ao salvar a cotação:", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	bid, err := strconv.ParseFloat(responseData.USDBRL.Bid, 64)
-	if err != nil {
-		http.Error(w, "Erro ao parsear bid", http.StatusInternalServerError)
 		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(responseData.USDBRL)
+	json.NewEncoder(w).Encode(quote)
 
-	dbCtx, dbCancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
-	defer dbCancel()
-
-	_, err = db.ExecContext(dbCtx, "INSERT INTO quotes (bid) VALUES (?)", bid)
-	if err != nil {
-		log.Printf("Falha ao inserir no Banco de dados: %v\n", err)
-		return
-	}
-
-	fmt.Printf(" %s para processar a solicitação.\n", time.Since(start))
+	fmt.Printf("%s para processar a solicitação.\n", time.Since(start))
 }
 
-func getPrice(body io.ReadCloser) (*Response, error) {
-	defer body.Close()
-	data, err := io.ReadAll(body)
+func fetchQuote(ctx context.Context) (*Quote, error) {
+	apiCtx, cancel := context.WithTimeout(ctx, 300*time.Millisecond)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(apiCtx, "GET", "https://economia.awesomeapi.com.br/json/last/USD-BRL", nil)
 	if err != nil {
 		return nil, err
+	}
+
+	client := &http.Client{}
+	res, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer res.Body.Close()
+
+	if res.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("status code error: %d %s", res.StatusCode, res.Status)
 	}
 
 	var resp Response
-	err = json.Unmarshal(data, &resp)
-	if err != nil {
+	if err := json.NewDecoder(res.Body).Decode(&resp); err != nil {
 		return nil, err
 	}
 
-	return &resp, nil
+	return &resp.USDBRL, nil
+}
+
+func saveQuote(db *sql.DB, bidStr string) error {
+	bid, err := strconv.ParseFloat(bidStr, 64)
+	if err != nil {
+		return err
+	}
+
+	dbCtx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
+	defer cancel()
+
+	_, err = db.ExecContext(dbCtx, "INSERT INTO quotes (bid) VALUES (?)", bid)
+	return err
 }

@@ -1,1 +1,1 @@
-Get "https://economia.awesomeapi.com.br/json/last/USD-BRL": context deadline exceeded
+Cotação: 4.9777
