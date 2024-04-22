@@ -20,7 +20,7 @@ func FetchAPI(url string, apiName string, c chan ApiResponse) {
 		Timeout: 1 * time.Second,
 	}
 	res, err := client.Get(url)
-	duration := time.Since(startTime) // Calcula a duração da requisição
+	duration := time.Since(startTime)
 
 	if err != nil {
 		c <- ApiResponse{Data: fmt.Sprintf("error: %v", err), Api: apiName, Duration: duration}
